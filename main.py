@@ -20,11 +20,18 @@ def initialize_comprehend_client():
         print("[ERROR] AWS Credentials not found. Please set your environment variables.")
         return None
 
+COMPREHEND_MAX_CHARS = 20000
+
+
+def _chunk_text(text, max_chars=COMPREHEND_MAX_CHARS):
+    """Splits text into chunks that fit within Comprehend Medical's character limit."""
+    return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
+
+
 def extract_medical_insights(comprehend_client, raw_text):
     """Passes raw text to Comprehend Medical and organizes all detected entities."""
     try:
         print("[2/3] Analyzing text with Amazon Comprehend Medical...")
-        response = comprehend_client.detect_entities_v2(Text=raw_text)
 
         structured_data = {
             "medications": [],
@@ -36,42 +43,35 @@ def extract_medical_insights(comprehend_client, raw_text):
             "time_expressions": [],
         }
 
-        for entity in response.get('Entities', []):
-            category = entity.get('Category')
-            base_info = {
-                "text": entity.get('Text'),
-                "type": entity.get('Type'),
-                "confidence": round(entity.get('Score', 0) * 100, 2),
-                "traits": [t.get('Name') for t in entity.get('Traits', [])],
-                "attributes": {}
-            }
-            for attr in entity.get('Attributes', []):
-                attr_type = attr['Type'].lower()
-                base_info["attributes"][attr_type] = {
-                    "value": attr.get('Text'),
-                    "confidence": round(attr.get('Score', 0) * 100, 2)
+        category_map = {
+            'MEDICATION': "medications",
+            'MEDICAL_CONDITION': "medical_conditions",
+            'ANATOMY': "anatomy",
+            'TEST_TREATMENT_PROCEDURE': "test_treatment_procedures",
+            'PROTECTED_HEALTH_INFORMATION': "protected_health_information",
+            'BEHAVIORAL_ENVIRONMENTAL_SOCIAL': "behavioral_environmental_social",
+            'TIME_EXPRESSION': "time_expressions",
+        }
+
+        for chunk in _chunk_text(raw_text):
+            response = comprehend_client.detect_entities_v2(Text=chunk)
+            for entity in response.get('Entities', []):
+                category = entity.get('Category')
+                if category not in category_map:
+                    continue
+                base_info = {
+                    "text": entity.get('Text'),
+                    "type": entity.get('Type'),
+                    "confidence": round(entity.get('Score', 0) * 100, 2),
+                    "traits": [t.get('Name') for t in entity.get('Traits', [])],
+                    "attributes": {}
                 }
-
-            if category == 'MEDICATION':
-                structured_data["medications"].append(base_info)
-
-            elif category == 'MEDICAL_CONDITION':
-                structured_data["medical_conditions"].append(base_info)
-
-            elif category == 'ANATOMY':
-                structured_data["anatomy"].append(base_info)
-
-            elif category == 'TEST_TREATMENT_PROCEDURE':
-                structured_data["test_treatment_procedures"].append(base_info)
-
-            elif category == 'PROTECTED_HEALTH_INFORMATION':
-                structured_data["protected_health_information"].append(base_info)
-
-            elif category == 'BEHAVIORAL_ENVIRONMENTAL_SOCIAL':
-                structured_data["behavioral_environmental_social"].append(base_info)
-
-            elif category == 'TIME_EXPRESSION':
-                structured_data["time_expressions"].append(base_info)
+                for attr in entity.get('Attributes', []):
+                    base_info["attributes"][attr['Type'].lower()] = {
+                        "value": attr.get('Text'),
+                        "confidence": round(attr.get('Score', 0) * 100, 2)
+                    }
+                structured_data[category_map[category]].append(base_info)
 
         return structured_data
 
@@ -120,6 +120,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         image_path = sys.argv[1]
     else:
-        image_path = os.path.join(DATASET_DIR, "1.jpeg")
+        image_path = os.path.join(DATASET_DIR, "90.jpg")
 
     run_prescription_pipeline(image_path)

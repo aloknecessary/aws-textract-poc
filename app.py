@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 from io import BytesIO
 from PIL import Image
@@ -138,6 +139,47 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+def render_entity_table(entities, title):
+    if not entities:
+        return
+    st.markdown(f'<div class="section-title">{title}</div>', unsafe_allow_html=True)
+
+    all_attr_keys = set()
+    for e in entities:
+        all_attr_keys.update(e.get("attributes", {}).keys())
+    all_attr_keys = sorted(all_attr_keys)
+
+    header = "<th>Entity</th><th>Type</th>"
+    for key in all_attr_keys:
+        header += f"<th>{key.replace('_', ' ').capitalize()}</th>"
+    header += "<th>Traits</th><th>Confidence</th>"
+
+    rows = ""
+    for e in entities:
+        attrs = e.get("attributes", {})
+        traits = ", ".join(e.get("traits", [])) if e.get("traits") else "-"
+        row = f"<td>{html.escape(e['text'])}</td><td>{html.escape(e.get('type', '-'))}</td>"
+        for key in all_attr_keys:
+            attr_val = attrs.get(key, {})
+            val = attr_val.get('value', '-') if isinstance(attr_val, dict) else attr_val
+            row += f"<td>{html.escape(str(val))}</td>"
+        row += f"<td>{html.escape(traits)}</td>"
+        row += f'<td><span class="confidence-badge">{e["confidence"]}%</span></td>'
+        rows += f"<tr>{row}</tr>"
+
+    st.markdown(
+        f"""
+        <div class="card" style="overflow-x: auto;">
+            <table class="med-table">
+                <thead><tr>{header}</tr></thead>
+                <tbody>{rows}</tbody>
+            </table>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 # File upload
 uploaded_file = st.file_uploader("Choose an image", type=["jpeg", "jpg", "png"], label_visibility="collapsed")
 
@@ -167,7 +209,7 @@ if uploaded_file is not None:
 
         # Display extracted text
         st.markdown('<div class="section-title">Extracted Text</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="ocr-box">{extracted_text}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="ocr-box">{html.escape(extracted_text)}</div>', unsafe_allow_html=True)
 
         # Step 2: Comprehend Medical
         with st.spinner("Analyzing medical entities..."):
@@ -177,64 +219,15 @@ if uploaded_file is not None:
                 st.stop()
             insights = extract_medical_insights(comprehend_client, extracted_text)
 
-        # Print full response to console for debugging
-        if insights:
-            import json
-            print("\n--- Comprehend Medical Response ---")
-            print(json.dumps(insights, indent=2))
-            print("--- End ---\n")
-
         if not insights:
             st.warning("No medical insights returned.")
             st.stop()
 
-        # Helper to render a generic entity table
-        def render_entity_table(entities, title):
-            if not entities:
-                return
-            st.markdown(f'<div class="section-title">{title}</div>', unsafe_allow_html=True)
-
-            # Collect all attribute keys
-            all_attr_keys = set()
-            for e in entities:
-                all_attr_keys.update(e.get("attributes", {}).keys())
-            all_attr_keys = sorted(all_attr_keys)
-
-            # Build header
-            header = "<th>Entity</th><th>Type</th>"
-            for key in all_attr_keys:
-                header += f"<th>{key.replace('_', ' ').capitalize()}</th>"
-            header += "<th>Traits</th><th>Confidence</th>"
-
-            # Build rows
-            rows = ""
-            for e in entities:
-                attrs = e.get("attributes", {})
-                traits = ", ".join(e.get("traits", [])) if e.get("traits") else "-"
-                row = f"<td>{e['text']}</td><td>{e.get('type', '-')}</td>"
-                for key in all_attr_keys:
-                    attr_val = attrs.get(key, {})
-                    if isinstance(attr_val, dict):
-                        row += f"<td>{attr_val.get('value', '-')}</td>"
-                    else:
-                        row += f"<td>{attr_val}</td>"
-                row += f"<td>{traits}</td>"
-                row += f'<td><span class="confidence-badge">{e["confidence"]}%</span></td>'
-                rows += f"<tr>{row}</tr>"
-
-            st.markdown(
-                f"""
-                <div class="card" style="overflow-x: auto;">
-                    <table class="med-table">
-                        <thead><tr>{header}</tr></thead>
-                        <tbody>{rows}</tbody>
-                    </table>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        # Render each category
+        # Render all 7 categories
         render_entity_table(insights.get("medications", []), "Medications")
         render_entity_table(insights.get("medical_conditions", []), "Medical Conditions")
-        render_entity_table(insights.get("test_treatment_procedures", []), "Tests, Treatments and Procedures")
+        render_entity_table(insights.get("test_treatment_procedures", []), "Tests, Treatments & Procedures")
+        render_entity_table(insights.get("anatomy", []), "Anatomy")
+        render_entity_table(insights.get("protected_health_information", []), "Protected Health Information")
+        render_entity_table(insights.get("behavioral_environmental_social", []), "Behavioral, Environmental & Social")
+        render_entity_table(insights.get("time_expressions", []), "Time Expressions")
