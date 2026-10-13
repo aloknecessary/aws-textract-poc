@@ -181,7 +181,181 @@ Each entity carries: `text`, `type`, `confidence`, `traits[]`, and
 
 ---
 
-## 9. Recommended Target Architecture
+## 9. Pricing
+
+> Prices shown are for **us-east-1**. Always verify current rates at
+> [aws.amazon.com/textract/pricing](https://aws.amazon.com/textract/pricing/)
+> and [aws.amazon.com/comprehend/medical/pricing](https://aws.amazon.com/comprehend/medical/pricing/).
+
+### 9.1 Amazon Textract
+
+Textract pricing depends on which API feature is used. The POC uses
+`detect_document_text` (Detect Text tier).
+
+#### Detect Text (plain OCR — what the POC uses)
+
+| Monthly Volume | Price per Page |
+| --- | --- |
+| First 1,000 pages | Free (Free Tier) |
+| Up to 1 million pages | $0.0015 per page |
+| Over 1 million pages | $0.0006 per page |
+
+#### Analyze Document — Forms (key-value pairs)
+
+| Monthly Volume | Price per Page |
+| --- | --- |
+| Up to 1 million pages | $0.05 per page |
+| Over 1 million pages | $0.04 per page |
+
+#### Analyze Document — Tables
+
+| Monthly Volume | Price per Page |
+| --- | --- |
+| Up to 1 million pages | $0.015 per page |
+| Over 1 million pages | $0.01 per page |
+
+#### Analyze Document — Signatures
+
+| Monthly Volume | Price per Page |
+| --- | --- |
+| Up to 1 million pages | $0.015 per page |
+| Over 1 million pages | $0.01 per page |
+
+#### Analyze Expense (invoices / receipts)
+
+| Monthly Volume | Price per Page |
+| --- | --- |
+| Up to 1 million pages | $0.01 per page |
+| Over 1 million pages | $0.008 per page |
+
+#### Analyze ID (identity documents)
+
+| Monthly Volume | Price per Page |
+| --- | --- |
+| Up to 1 million pages | $0.01 per page |
+| Over 1 million pages | $0.008 per page |
+
+> **POC relevance:** The POC calls `detect_document_text` only —
+> billed at the Detect Text rate ($0.0015/page up to 1M).
+> Each prescription image = 1 page.
+
+---
+
+### 9.2 Amazon Comprehend Medical
+
+Comprehend Medical is priced per **unit**, where
+**1 unit = 100 UTF-8 characters** (minimum 3 units per request).
+
+#### NERe — Named Entity Recognition (what the POC uses)
+
+`detect_entities_v2` is billed under the NERe tier.
+
+| Monthly Volume | Price per Unit |
+| --- | --- |
+| First 10 million units | $0.01 per unit |
+| 10M – 50M units | $0.005 per unit |
+| 50M – 100M units | $0.00375 per unit |
+| Over 100M units | Contact AWS |
+
+#### ICD-10-CM Linking
+
+| Monthly Volume | Price per Unit |
+| --- | --- |
+| First 10 million units | $0.01 per unit |
+| 10M – 50M units | $0.005 per unit |
+| Over 50M units | $0.00375 per unit |
+
+#### RxNorm Linking
+
+| Monthly Volume | Price per Unit |
+| --- | --- |
+| First 10 million units | $0.01 per unit |
+| 10M – 50M units | $0.005 per unit |
+| Over 50M units | $0.00375 per unit |
+
+#### SNOMED CT Linking
+
+| Monthly Volume | Price per Unit |
+| --- | --- |
+| First 10 million units | $0.01 per unit |
+| 10M – 50M units | $0.005 per unit |
+| Over 50M units | $0.00375 per unit |
+
+> **POC relevance:** The POC calls `detect_entities_v2` only —
+> billed under NERe. A typical prescription OCR output is ~500–1,500
+> characters = 5–15 units per prescription.
+
+---
+
+### 9.3 Pricing Scenarios
+
+Both scenarios use us-east-1 rates and assume `detect_document_text`
+(Textract) + `detect_entities_v2` (Comprehend Medical NERe only).
+Average prescription OCR output assumed at **1,000 characters = 10 units**.
+
+---
+
+#### Scenario A — Small Clinic (500 prescriptions/month)
+
+A single GP practice or small pharmacy processing ~500 prescription
+images per month.
+
+**Textract cost:**
+
+| Item | Calculation | Cost |
+| --- | --- | --- |
+| 500 pages × $0.0015 | Within free tier first 1,000 pages | $0.00 |
+
+**Comprehend Medical cost:**
+
+| Item | Calculation | Cost |
+| --- | --- | --- |
+| 500 prescriptions × 10 units × $0.01 | 5,000 units at NERe tier 1 | $0.50 |
+
+| | Monthly Total |
+| --- | --- |
+| Textract | $0.00 (free tier) |
+| Comprehend Medical | $0.50 |
+| **Total** | **$0.50 / month** |
+
+> At this scale the pipeline is essentially free. The dominant cost
+> is infrastructure (Lambda, API Gateway, S3) not the AI services.
+
+---
+
+#### Scenario B — Regional Hospital Network (100,000 prescriptions/month)
+
+A mid-size hospital network or pharmacy chain processing ~100,000
+prescription images per month across multiple sites.
+
+**Textract cost:**
+
+| Item | Calculation | Cost |
+| --- | --- | --- |
+| 100,000 pages × $0.0015 | All within first 1M tier | $150.00 |
+
+**Comprehend Medical cost:**
+
+| Item | Calculation | Cost |
+| --- | --- | --- |
+| 100,000 × 10 units = 1,000,000 units × $0.01 | All within first 10M tier | $1,000.00 |
+
+| | Monthly Total |
+| --- | --- |
+| Textract | $150.00 |
+| Comprehend Medical | $1,000.00 |
+| **Total** | **$1,150.00 / month** |
+| **Per prescription** | **$0.0115** |
+
+> At $0.0115 per prescription, the AI processing cost is a fraction
+> of the ~15–20 minutes of pharmacist time it replaces. At an average
+> pharmacist cost of $0.50/minute, each manual transcription costs
+> ~$7.50–$10.00 — making the ROI approximately **650x–870x** at
+> this volume.
+
+---
+
+## 10. Recommended Target Architecture
 
 ```text
 app.py                  ← Streamlit UI (display only)
@@ -193,7 +367,7 @@ pipeline.py             ← orchestrates textract → comprehend → output
 
 ---
 
-## 10. Dependencies
+## 11. Dependencies
 
 Current:
 
